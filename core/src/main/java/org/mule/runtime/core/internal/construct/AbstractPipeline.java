@@ -247,6 +247,10 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
 
     initialiseIfNeeded(source, muleContext);
     initialiseIfNeeded(pipeline, muleContext);
+
+    completionCallbackScheduler = schedulerService.ioScheduler(muleContext.getSchedulerBaseConfig()
+        .withMaxConcurrentTasks(1)
+        .withName(getName() + ".flux.completionCallback"));
   }
 
   /**
@@ -255,7 +259,7 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
    *
    * @return the into-flow dispatching {@link ReactiveProcessor}
    */
-  private ReactiveProcessor dispatchToFlow() {
+  protected final ReactiveProcessor dispatchToFlow() {
     return publisher -> from(publisher)
         .doOnNext(assertStarted())
         .transform(routeThroughProcessingStrategyTransformer())
@@ -450,6 +454,7 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
   @Override
   protected void doStart() throws MuleException {
     super.doStart();
+
     try {
       // Each component in the chain must be started before `apply` is called on them, ...
       startIfStartable(pipeline);
@@ -459,9 +464,6 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
       stopOnFailure(e);
       return;
     }
-
-    completionCallbackScheduler = schedulerService.ioScheduler(muleContext.getSchedulerBaseConfig().withMaxConcurrentTasks(1)
-        .withName(getName() + ".flux.completionCallback"));
 
     canProcessMessage = true;
     if (getMuleContext().isStarted()) {
@@ -510,8 +512,10 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
   public Consumer<CoreEvent> assertStarted() {
     return event -> {
       if (!canProcessMessage) {
-        throw propagate(new MessagingException(event,
-                                               new LifecycleException(CoreMessages.isStopped(getName()), event.getMessage())));
+        final Exception exception =
+            new MessagingException(event, new LifecycleException(CoreMessages.isStopped(getName()), this));
+        ((BaseEventContext) event.getContext()).error(exception);
+        throw propagate(exception);
       }
     };
   }
@@ -531,15 +535,15 @@ public abstract class AbstractPipeline extends AbstractFlowConstruct implements 
   protected void doStopProcessingStrategy() throws MuleException {
     stopIfStoppable(processingStrategy);
 
-    if (completionCallbackScheduler != null) {
-      completionCallbackScheduler.stop();
-    }
-
     super.doStopProcessingStrategy();
   }
 
   @Override
   protected void doDispose() {
+    if (completionCallbackScheduler != null) {
+      completionCallbackScheduler.stop();
+    }
+
     disposeIfDisposable(pipeline);
     disposeIfDisposable(source);
     disposeIfDisposable(processingStrategy);

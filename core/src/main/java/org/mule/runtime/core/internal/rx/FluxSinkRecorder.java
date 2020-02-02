@@ -24,6 +24,7 @@ public class FluxSinkRecorder<T> implements Consumer<FluxSink<T>> {
 
   @Override
   public void accept(FluxSink<T> fluxSink) {
+    // System.out.println(" >> accept @ " + toString());
     FluxSinkRecorderDelegate<T> previousDelegate = this.delegate;
     delegate = new DirectDelegate<>(fluxSink);
     previousDelegate.accept(fluxSink);
@@ -34,15 +35,22 @@ public class FluxSinkRecorder<T> implements Consumer<FluxSink<T>> {
   }
 
   public void next(T response) {
+    // System.out.println(" >> next @ " + toString());
     delegate.next(response);
   }
 
   public void error(Throwable error) {
-    delegate.error(error);
+    // System.out.println(" >> error @ " + toString());
+    FluxSinkRecorderDelegate<T> previousDelegate = this.delegate;
+    delegate = new AlreadyTerminatedDelegate<>();
+    previousDelegate.error(error);
   }
 
   public void complete() {
-    delegate.complete();
+    // System.out.println(" >> complete @ " + toString());
+    FluxSinkRecorderDelegate<T> previousDelegate = this.delegate;
+    delegate = new AlreadyTerminatedDelegate<>();
+    previousDelegate.complete();
   }
 
   private interface FluxSinkRecorderDelegate<T> extends Consumer<FluxSink<T>> {
@@ -135,7 +143,7 @@ public class FluxSinkRecorder<T> implements Consumer<FluxSink<T>> {
 
     @Override
     public void accept(FluxSink<T> t) {
-      // Nothing to do
+      throw new IllegalStateException("FluxSinkRecorder already accepted");
     }
 
     @Override
@@ -156,6 +164,37 @@ public class FluxSinkRecorder<T> implements Consumer<FluxSink<T>> {
     @Override
     public void complete() {
       fluxSink.complete();
+    }
+
+  }
+
+  private static class AlreadyTerminatedDelegate<T> implements FluxSinkRecorderDelegate<T> {
+
+    @Override
+    public void accept(FluxSink<T> t) {
+      throw new IllegalStateException("FluxSinkRecorder already terminated");
+    }
+
+    @Override
+    public FluxSink<T> getFluxSink() {
+      throw new IllegalStateException("FluxSinkRecorder already terminated");
+    }
+
+    @Override
+    public void next(T response) {
+      throw new IllegalStateException("FluxSinkRecorder already terminated");
+    }
+
+    @Override
+    public void error(Throwable error) {
+      final IllegalStateException illegalStateException = new IllegalStateException("FluxSinkRecorder already terminated");
+      illegalStateException.addSuppressed(error);
+      throw illegalStateException;
+    }
+
+    @Override
+    public void complete() {
+      throw new IllegalStateException("FluxSinkRecorder already terminated");
     }
 
   }
