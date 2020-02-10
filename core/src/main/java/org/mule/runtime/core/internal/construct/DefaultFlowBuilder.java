@@ -39,6 +39,7 @@ import java.util.Optional;
 import org.reactivestreams.Publisher;
 
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Creates instances of {@link Flow} with a default implementation
@@ -227,9 +228,9 @@ public class DefaultFlowBuilder implements Builder {
           .doOnNext(assertStarted())
           // Insert the incoming event into the flow, routing it through the processing strategy
           // TODO MULE-17896 migrate this
-          .flatMap(routeThroughProcessingStrategyMapper())
-          // .compose(routeThroughProcessingStrategyTransformer())
-
+          // .flatMap(routeThroughProcessingStrategyMapper())
+          .flatMap(event -> Mono.just(event)
+              .compose(routeThroughProcessingStrategyTransformer()))
           // .log()
 
           // Don't handle errors, these will be handled by parent flow
